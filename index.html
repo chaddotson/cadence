@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" id="themeColor" content="#f6f2e9">
     <title>Cadence — Private Task Tracker</title>
+    <link rel="icon" type="image/png" href="cadence-logo.png">
+    <link rel="apple-touch-icon" href="cadence-logo.png">
     <script>
         (() => {
             try {
@@ -154,14 +156,11 @@
         .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 
         .mark {
-            display: grid;
-            place-items: center;
+            display: block;
             width: 36px;
             height: 36px;
             border-radius: 11px;
-            color: var(--primary-text);
-            background: var(--primary-bg);
-            font-weight: 800;
+            object-fit: cover;
             box-shadow: 4px 4px 0 var(--amber);
         }
 
@@ -431,7 +430,7 @@
 <main class="shell">
     <header>
         <div>
-            <div class="brand"><span class="mark">C</span><span class="brand-name">Cadence</span></div>
+            <div class="brand"><img class="mark" src="cadence-logo.png" alt="" width="36" height="36"><span class="brand-name">Cadence</span></div>
 <!--            <h1>Keep the things that matter in rhythm.</h1>-->
 <!--            <p class="subtitle">A quiet, private tracker for the jobs that come around again. Your tasks and check-ins stay on this device.</p>-->
         </div>
@@ -636,6 +635,10 @@
             return task && typeof task.id === 'string' && typeof task.name === 'string' && frequencies.includes(task.frequency);
         }
 
+        function validTimestamp(value) {
+            return typeof value === 'string' && !Number.isNaN(new Date(value).getTime());
+        }
+
         function saveTasks() {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
         }
@@ -654,10 +657,23 @@
             return parseDate(value).toLocaleDateString(undefined, options);
         }
 
+        function completionDescription(value) {
+            if (!validTimestamp(value)) return '';
+            const completed = new Date(value);
+            const date = localDateString(completed) === localDateString()
+                ? 'today'
+                : completed.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+            const time = completed.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+            return `Completed ${date}, ${time}`;
+        }
+
         function cycleDescription(task, status) {
             if (status.state === 'upcoming') return `Starts ${humanDate(task.anchor, { month: 'short', day: 'numeric', year: 'numeric' })}`;
-            if (task.frequency === 'daily') return `Resets tomorrow`;
-            return `Resets ${humanDate(status.next, { month: 'short', day: 'numeric' })}`;
+            const reset = task.frequency === 'daily'
+                ? 'Resets tomorrow'
+                : `Resets ${humanDate(status.next, { month: 'short', day: 'numeric' })}`;
+            const completed = status.state === 'done' ? completionDescription(task.completedAt) : '';
+            return completed || reset;
         }
 
         function render() {
@@ -749,11 +765,12 @@
 
         async function shareSetup() {
             if (!tasks.length) return notify('Add a task before sharing your setup.');
-            const shared = tasks.map(({ name, frequency, anchor, completedCycle }) => ({
+            const shared = tasks.map(({ name, frequency, anchor, completedCycle, completedAt }) => ({
                 name,
                 frequency,
                 ...(anchor ? { anchor } : {}),
-                completedCycle: completedCycle || null
+                completedCycle: completedCycle || null,
+                completedAt: completedAt || null
             }));
             const url = `${location.href.split('#')[0]}#tasks=${base64UrlEncode(JSON.stringify(shared))}`;
             try {
@@ -775,7 +792,8 @@
                     name: item.name.trim().slice(0, 100),
                     frequency: item.frequency,
                     anchor: item.frequency === 'daily' ? '' : (/^\d{4}-\d{2}-\d{2}$/.test(item.anchor || '') ? item.anchor : localDateString()),
-                    completedCycle: /^\d{4}-\d{2}-\d{2}$/.test(item.completedCycle || '') ? item.completedCycle : null
+                    completedCycle: /^\d{4}-\d{2}-\d{2}$/.test(item.completedCycle || '') ? item.completedCycle : null,
+                    completedAt: /^\d{4}-\d{2}-\d{2}$/.test(item.completedCycle || '') && validTimestamp(item.completedAt) ? item.completedAt : null
                 }));
                 if (!imported.length) throw new Error('Empty setup');
                 tasks = imported;
@@ -803,7 +821,9 @@
             if (button.dataset.action === 'complete') {
                 const status = statusFor(task);
                 if (status.state === 'upcoming') return;
-                task.completedCycle = status.state === 'done' ? null : status.start;
+                const completing = status.state !== 'done';
+                task.completedCycle = completing ? status.start : null;
+                task.completedAt = completing ? new Date().toISOString() : null;
                 saveTasks();
                 render();
                 notify(status.state === 'done' ? 'Task marked due again.' : 'Task completed for this cycle.');
@@ -828,7 +848,8 @@
                 name: nameInput.value.trim(),
                 frequency: frequencyInput.value,
                 anchor: frequencyInput.value === 'daily' ? '' : anchorInput.value,
-                completedCycle: existing && !scheduleChanged ? existing.completedCycle : null
+                completedCycle: existing && !scheduleChanged ? existing.completedCycle : null,
+                completedAt: existing && !scheduleChanged ? existing.completedAt || null : null
             };
             if (!next.name || (next.frequency !== 'daily' && !next.anchor)) return;
             if (existing) Object.assign(existing, next);
@@ -855,6 +876,7 @@
             const task = tasks.find(item => item.id === id);
             if (!task) return;
             task.completedCycle = null;
+            task.completedAt = null;
             saveTasks();
             dialog.close();
             render();

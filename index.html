@@ -369,7 +369,31 @@
         }
         .toast.show { transform: translate(-50%, 0); opacity: 1; }
 
-        .privacy { margin-top: 25px; color: var(--muted); font-size: 12px; text-align: center; }
+        .privacy {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-wrap: wrap;
+            gap: 7px;
+            margin-top: 25px;
+            color: var(--muted);
+            font-size: 12px;
+            text-align: center;
+        }
+        .clear-data {
+            padding: 2px 4px;
+            border: 0;
+            border-radius: 5px;
+            color: var(--muted);
+            background: transparent;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 500;
+            opacity: .7;
+            transition: color .15s ease, opacity .15s ease;
+        }
+        .clear-data:hover { color: var(--red); opacity: 1; text-decoration: underline; }
+        .clear-data:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
 
         @media (max-width: 720px) {
             .shell { width: min(100% - 20px, 620px); padding: 16px 0 36px; }
@@ -461,7 +485,11 @@
     </div>
 
     <section class="task-list" id="taskList" aria-live="polite"></section>
-    <p class="privacy">Private by design · Saved in your browser · No account needed</p>
+    <footer class="privacy">
+        <span>Private by design · Saved in your browser · No account needed</span>
+        <span aria-hidden="true">·</span>
+        <button class="clear-data" id="clearDataButton" type="button">Clear all data</button>
+    </footer>
 </main>
 
 <dialog id="taskDialog" aria-labelledby="dialogTitle">
@@ -807,6 +835,21 @@
 
         document.getElementById('addButton').addEventListener('click', () => openTaskDialog());
         document.getElementById('shareButton').addEventListener('click', shareSetup);
+        document.getElementById('clearDataButton').addEventListener('click', () => {
+            const hasThemePreference = document.documentElement.dataset.theme === 'light' || document.documentElement.dataset.theme === 'dark';
+            if (!tasks.length && !hasThemePreference) return notify('There is no saved data to clear.');
+            if (!confirm('Clear all Cadence data from this browser? This removes every task, completion record, timestamp, and saved theme preference. This cannot be undone.')) return;
+
+            tasks = [];
+            localStorage.removeItem(STORAGE_KEY);
+            localStorage.removeItem(THEME_KEY);
+            currentFilter = 'all';
+            document.querySelectorAll('.filter').forEach(item => item.classList.toggle('active', item.dataset.filter === 'all'));
+            themeSelect.value = 'system';
+            applyTheme('system');
+            render();
+            notify('All Cadence data cleared.');
+        });
         document.getElementById('closeDialog').addEventListener('click', () => dialog.close());
         document.getElementById('cancelButton').addEventListener('click', () => dialog.close());
         frequencyInput.addEventListener('change', updateAnchorField);

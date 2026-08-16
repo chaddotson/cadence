@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" id="themeColor" content="#f6f2e9">
+    <title>Cadence — Private Task Tracker</title>
+    <script>
+        (() => {
+            try {
+                const theme = localStorage.getItem('cadence.theme.v1');
+                if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+            } catch { /* Use the system theme when storage is unavailable. */ }
+        })();
+    </script>
+    <style>
+        :root {
+            color-scheme: light;
+            --ink: #17231d;
+            --muted: #68736c;
+            --paper: #f6f2e9;
+            --card: rgba(255, 253, 248, 0.88);
+            --surface: #fffdf8;
+            --surface-translucent: rgba(255, 255, 255, .62);
+            --surface-faint: rgba(255, 255, 255, .3);
+            --surface-stat: rgba(255, 253, 248, .92);
+            --surface-hover: #eee9df;
+            --filter-active: #e8e2d6;
+            --field: #ffffff;
+            --upcoming: #ebe9e4;
+            --line: #ded9cd;
+            --green: #176744;
+            --green-soft: #dcecdf;
+            --done-text: #0d5636;
+            --done-line: #b5d5bd;
+            --red: #a7382e;
+            --red-soft: #f3dcd6;
+            --due-text: #7c1f1b;
+            --due-line: #e6b8ae;
+            --amber: #e7ab3f;
+            --primary-bg: #17231d;
+            --primary-text: #ffffff;
+            --glow-amber: rgba(231, 171, 63, .16);
+            --glow-green: rgba(23, 103, 68, .12);
+            --backdrop: rgba(20, 28, 23, .48);
+            --toast-bg: #17231d;
+            --toast-text: #ffffff;
+            --toast-line: transparent;
+            --shadow: 0 18px 50px rgba(38, 45, 39, 0.10);
+        }
+
+        :root[data-theme="dark"] {
+            color-scheme: dark;
+            --ink: #eef3ed;
+            --muted: #a2ada5;
+            --paper: #111713;
+            --card: rgba(27, 36, 30, .9);
+            --surface: #1b241e;
+            --surface-translucent: rgba(37, 48, 40, .72);
+            --surface-faint: rgba(255, 255, 255, .025);
+            --surface-stat: rgba(27, 36, 30, .94);
+            --surface-hover: #29352d;
+            --filter-active: #303c34;
+            --field: #151d18;
+            --upcoming: #303732;
+            --line: #354139;
+            --green: #7bc99f;
+            --green-soft: #163e2b;
+            --done-text: #bce8cb;
+            --done-line: #356b4c;
+            --red: #f28a7d;
+            --red-soft: #522722;
+            --due-text: #ffd0c9;
+            --due-line: #855047;
+            --amber: #efb950;
+            --primary-bg: #eef3ed;
+            --primary-text: #111713;
+            --glow-amber: rgba(239, 185, 80, .10);
+            --glow-green: rgba(82, 170, 121, .10);
+            --backdrop: rgba(2, 5, 3, .68);
+            --toast-bg: #27332b;
+            --toast-text: #eef3ed;
+            --toast-line: #445348;
+            --shadow: 0 18px 50px rgba(0, 0, 0, .25);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) {
+                color-scheme: dark;
+                --ink: #eef3ed;
+                --muted: #a2ada5;
+                --paper: #111713;
+                --card: rgba(27, 36, 30, .9);
+                --surface: #1b241e;
+                --surface-translucent: rgba(37, 48, 40, .72);
+                --surface-faint: rgba(255, 255, 255, .025);
+                --surface-stat: rgba(27, 36, 30, .94);
+                --surface-hover: #29352d;
+                --filter-active: #303c34;
+                --field: #151d18;
+                --upcoming: #303732;
+                --line: #354139;
+                --green: #7bc99f;
+                --green-soft: #163e2b;
+                --done-text: #bce8cb;
+                --done-line: #356b4c;
+                --red: #f28a7d;
+                --red-soft: #522722;
+                --due-text: #ffd0c9;
+                --due-line: #855047;
+                --amber: #efb950;
+                --primary-bg: #eef3ed;
+                --primary-text: #111713;
+                --glow-amber: rgba(239, 185, 80, .10);
+                --glow-green: rgba(82, 170, 121, .10);
+                --backdrop: rgba(2, 5, 3, .68);
+                --toast-bg: #27332b;
+                --toast-text: #eef3ed;
+                --toast-line: #445348;
+                --shadow: 0 18px 50px rgba(0, 0, 0, .25);
+            }
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            color: var(--ink);
+            background:
+                radial-gradient(circle at 8% 6%, var(--glow-amber), transparent 28rem),
+                radial-gradient(circle at 92% 96%, var(--glow-green), transparent 32rem),
+                var(--paper);
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        button, input, select { font: inherit; }
+        button { color: inherit; }
+
+        .shell {
+            width: min(1120px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 36px 0 64px;
+        }
+
+        header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 28px;
+            margin-bottom: 34px;
+        }
+
+        .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+
+        .mark {
+            display: grid;
+            place-items: center;
+            width: 36px;
+            height: 36px;
+            border-radius: 11px;
+            color: var(--primary-text);
+            background: var(--primary-bg);
+            font-weight: 800;
+            box-shadow: 4px 4px 0 var(--amber);
+        }
+
+        .brand-name { font-size: 15px; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
+
+        h1 {
+            max-width: 670px;
+            margin: 0;
+            font-family: Georgia, "Times New Roman", serif;
+            font-size: clamp(38px, 6vw, 68px);
+            font-weight: 500;
+            line-height: .99;
+            letter-spacing: -.045em;
+        }
+
+        .subtitle { max-width: 600px; margin: 17px 0 0; color: var(--muted); font-size: 17px; line-height: 1.55; }
+
+        .header-actions { display: flex; gap: 10px; padding-top: 3px; }
+
+        .button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            min-height: 43px;
+            padding: 0 16px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            background: var(--surface-translucent);
+            cursor: pointer;
+            font-weight: 750;
+            transition: transform .15s ease, border-color .15s ease, background .15s ease;
+        }
+
+        .button:hover { transform: translateY(-1px); border-color: #bdb7aa; }
+        .button:focus-visible, .cycle-button:focus-visible, .icon-button:focus-visible, input:focus, select:focus {
+            outline: 3px solid rgba(231,171,63,.38);
+            outline-offset: 2px;
+        }
+        .button.primary { color: var(--primary-text); border-color: var(--primary-bg); background: var(--primary-bg); }
+        .button.icon-only { width: 43px; padding: 0; }
+
+        .theme-select {
+            width: auto;
+            min-width: 101px;
+            height: 43px;
+            padding: 0 31px 0 12px;
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            color: var(--ink);
+            background-color: var(--surface-translucent);
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 750;
+        }
+
+        .summary {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1px;
+            overflow: hidden;
+            margin-bottom: 20px;
+            border: 1px solid var(--line);
+            border-radius: 18px;
+            background: var(--line);
+            box-shadow: var(--shadow);
+        }
+
+        .stat { padding: 18px 22px; background: var(--surface-stat); }
+        .stat-label { display: block; color: var(--muted); font-size: 12px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+        .stat-value { display: block; margin-top: 5px; font-family: Georgia, serif; font-size: 28px; }
+
+        .toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin: 28px 0 13px;
+        }
+
+        h2 { margin: 0; font-family: Georgia, serif; font-size: 24px; font-weight: 500; }
+        .filter-group { display: flex; gap: 6px; }
+
+        .filter {
+            padding: 7px 11px;
+            border: 0;
+            border-radius: 9px;
+            color: var(--muted);
+            background: transparent;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 750;
+        }
+        .filter.active { color: var(--ink); background: var(--filter-active); }
+
+        .task-list { display: grid; gap: 12px; }
+
+        .task {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto auto;
+            align-items: center;
+            gap: 18px;
+            min-height: 92px;
+            padding: 17px 18px 17px 22px;
+            border: 1px solid var(--line);
+            border-radius: 17px;
+            background: var(--card);
+            box-shadow: 0 7px 22px rgba(38,45,39,.055);
+        }
+
+        .task-copy { min-width: 0; }
+        .task-title { overflow: hidden; margin: 0 0 7px; font-size: 17px; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
+        .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
+        .frequency { color: var(--green); font-weight: 800; text-transform: capitalize; }
+        .dot { width: 3px; height: 3px; border-radius: 50%; background: #a5aca7; }
+
+        .cycle-button {
+            min-width: 132px;
+            min-height: 49px;
+            padding: 0 17px;
+            border: 0;
+            border-radius: 13px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 850;
+            transition: transform .15s ease, filter .15s ease;
+        }
+        .cycle-button:hover:not(:disabled) { transform: translateY(-1px); filter: saturate(1.1); }
+        .cycle-button.due { color: var(--due-text); background: var(--red-soft); box-shadow: inset 0 0 0 1px var(--due-line); }
+        .cycle-button.done { color: var(--done-text); background: var(--green-soft); box-shadow: inset 0 0 0 1px var(--done-line); }
+        .cycle-button.upcoming { color: var(--muted); background: var(--upcoming); cursor: default; }
+
+        .task-actions { display: flex; gap: 3px; }
+        .icon-button {
+            display: grid;
+            place-items: center;
+            width: 36px;
+            height: 36px;
+            border: 0;
+            border-radius: 10px;
+            color: var(--muted);
+            background: transparent;
+            cursor: pointer;
+            font-size: 17px;
+        }
+        .icon-button:hover { color: var(--ink); background: var(--surface-hover); }
+
+        .empty {
+            padding: 62px 24px;
+            border: 1px dashed #cfc8ba;
+            border-radius: 18px;
+            text-align: center;
+            background: var(--surface-faint);
+        }
+        .empty-symbol { display: block; margin-bottom: 12px; font-family: Georgia, serif; font-size: 44px; color: var(--green); }
+        .empty h3 { margin: 0 0 7px; font-family: Georgia, serif; font-size: 23px; font-weight: 500; }
+        .empty p { margin: 0 0 18px; color: var(--muted); }
+
+        dialog {
+            width: min(500px, calc(100% - 28px));
+            padding: 0;
+            border: 0;
+            border-radius: 21px;
+            color: var(--ink);
+            background: var(--surface);
+            box-shadow: 0 26px 90px rgba(18, 27, 22, .28);
+        }
+        dialog::backdrop { background: var(--backdrop); backdrop-filter: blur(4px); }
+
+        .modal-head { display: flex; justify-content: space-between; align-items: center; padding: 22px 24px 10px; }
+        .modal-head h2 { font-size: 28px; }
+        .modal-body { padding: 12px 24px 25px; }
+        .field { margin-bottom: 18px; }
+        label { display: block; margin-bottom: 7px; font-size: 13px; font-weight: 800; }
+        input, select {
+            width: 100%;
+            height: 46px;
+            padding: 0 13px;
+            border: 1px solid #cec9be;
+            border-radius: 11px;
+            color: var(--ink);
+            background: var(--field);
+        }
+        .hint { margin: 8px 0 0; color: var(--muted); font-size: 12px; line-height: 1.45; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 9px; padding-top: 6px; }
+        .danger { color: var(--red); margin-right: auto; }
+
+        .toast {
+            position: fixed;
+            left: 50%;
+            bottom: 24px;
+            z-index: 10;
+            max-width: calc(100% - 32px);
+            padding: 12px 17px;
+            border-radius: 12px;
+            border: 1px solid var(--toast-line);
+            color: var(--toast-text);
+            background: var(--toast-bg);
+            box-shadow: var(--shadow);
+            font-size: 14px;
+            font-weight: 700;
+            transform: translate(-50%, 24px);
+            opacity: 0;
+            pointer-events: none;
+            transition: .22s ease;
+        }
+        .toast.show { transform: translate(-50%, 0); opacity: 1; }
+
+        .privacy { margin-top: 25px; color: var(--muted); font-size: 12px; text-align: center; }
+
+        @media (max-width: 720px) {
+            .shell { width: min(100% - 22px, 620px); padding-top: 23px; }
+            header { display: block; margin-bottom: 26px; }
+            .header-actions { margin-top: 22px; }
+            .theme-select { flex: 0 0 auto; }
+            .summary { grid-template-columns: repeat(3, 1fr); }
+            .stat { padding: 15px 13px; }
+            .stat-value { font-size: 23px; }
+            .toolbar { align-items: flex-end; }
+            .filter-group { overflow-x: auto; max-width: 70%; }
+            .task { grid-template-columns: minmax(0, 1fr) auto; gap: 14px; padding: 16px; }
+            .cycle-button { grid-column: 1 / -1; grid-row: 2; width: 100%; }
+            .task-actions { grid-column: 2; grid-row: 1; }
+        }
+
+        @media (max-width: 430px) {
+            .summary { grid-template-columns: 1fr; }
+            .stat { display: flex; align-items: center; justify-content: space-between; }
+            .stat-value { margin: 0; }
+            .toolbar { display: block; }
+            .filter-group { max-width: 100%; margin-top: 10px; }
+            .button-label { display: none; }
+        }
+    </style>
+</head>
+<body>
+<main class="shell">
+    <header>
+        <div>
+            <div class="brand"><span class="mark">C</span><span class="brand-name">Cadence</span></div>
+<!--            <h1>Keep the things that matter in rhythm.</h1>-->
+<!--            <p class="subtitle">A quiet, private tracker for the jobs that come around again. Your tasks and check-ins stay on this device.</p>-->
+        </div>
+        <div class="header-actions">
+            <select class="theme-select" id="themeSelect" aria-label="Color theme">
+                <option value="system">◐ System</option>
+                <option value="light">☀ Light</option>
+                <option value="dark">☾ Dark</option>
+            </select>
+            <button class="button" id="shareButton" type="button" aria-label="Copy a shareable link">↗ <span class="button-label">Share setup</span></button>
+            <button class="button primary" id="addButton" type="button">＋ Add task</button>
+        </div>
+    </header>
+
+<!--    <section class="summary" aria-label="Task summary">-->
+<!--        <div class="stat"><span class="stat-label">Due now</span><strong class="stat-value" id="dueCount">0</strong></div>-->
+<!--        <div class="stat"><span class="stat-label">Completed</span><strong class="stat-value" id="doneCount">0</strong></div>-->
+<!--        <div class="stat"><span class="stat-label">Next reset</span><strong class="stat-value" id="nextReset">—</strong></div>-->
+<!--    </section>-->
+
+    <div class="toolbar">
+        <h2>Your Repeat Tasks</h2>
+        <div class="filter-group" aria-label="Filter tasks">
+            <button class="filter active" data-filter="all" type="button">All</button>
+            <button class="filter" data-filter="due" type="button">Due</button>
+            <button class="filter" data-filter="done" type="button">Done</button>
+        </div>
+    </div>
+
+    <section class="task-list" id="taskList" aria-live="polite"></section>
+    <p class="privacy">Private by design · Saved in your browser · No account needed</p>
+</main>
+
+<dialog id="taskDialog" aria-labelledby="dialogTitle">
+    <form id="taskForm">
+        <div class="modal-head">
+            <h2 id="dialogTitle">Add a task</h2>
+            <button class="icon-button" id="closeDialog" type="button" aria-label="Close">×</button>
+        </div>
+        <div class="modal-body">
+            <input type="hidden" id="taskId">
+            <div class="field">
+                <label for="taskName">Task name</label>
+                <input id="taskName" maxlength="100" placeholder="e.g. Test the smoke alarms" required autofocus>
+            </div>
+            <div class="field">
+                <label for="frequency">Repeat</label>
+                <select id="frequency">
+                    <option value="daily">Every day</option>
+                    <option value="weekly">Every week</option>
+                    <option value="monthly">Every month</option>
+                    <option value="yearly">Every year</option>
+                </select>
+            </div>
+            <div class="field" id="anchorField" hidden>
+                <label for="anchorDate">Cycle starts on</label>
+                <input type="date" id="anchorDate">
+                <p class="hint" id="anchorHint">This date sets the first day of each cycle.</p>
+            </div>
+            <div class="modal-actions">
+                <button class="button" id="resetButton" type="button" hidden>↺ Reset</button>
+                <button class="button danger" id="deleteButton" type="button" hidden>Delete</button>
+                <button class="button" id="cancelButton" type="button">Cancel</button>
+                <button class="button primary" type="submit">Save task</button>
+            </div>
+        </div>
+    </form>
+</dialog>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+    (() => {
+        'use strict';
+
+        const STORAGE_KEY = 'cadence.tasks.v1';
+        const THEME_KEY = 'cadence.theme.v1';
+        const DAY_MS = 86400000;
+        const frequencies = ['daily', 'weekly', 'monthly', 'yearly'];
+        let tasks = loadTasks();
+        let currentFilter = 'all';
+        let toastTimer;
+
+        const list = document.getElementById('taskList');
+        const dialog = document.getElementById('taskDialog');
+        const form = document.getElementById('taskForm');
+        const nameInput = document.getElementById('taskName');
+        const frequencyInput = document.getElementById('frequency');
+        const anchorInput = document.getElementById('anchorDate');
+        const anchorField = document.getElementById('anchorField');
+        const deleteButton = document.getElementById('deleteButton');
+        const resetButton = document.getElementById('resetButton');
+        const themeSelect = document.getElementById('themeSelect');
+        const systemTheme = matchMedia('(prefers-color-scheme: dark)');
+
+        function applyTheme(preference) {
+            if (preference === 'light' || preference === 'dark') {
+                document.documentElement.dataset.theme = preference;
+                try { localStorage.setItem(THEME_KEY, preference); } catch { /* Theme still applies for this visit. */ }
+            } else {
+                delete document.documentElement.dataset.theme;
+                try { localStorage.removeItem(THEME_KEY); } catch { /* System theme still applies. */ }
+            }
+            const isDark = preference === 'dark' || (preference === 'system' && systemTheme.matches);
+            document.getElementById('themeColor').content = isDark ? '#111713' : '#f6f2e9';
+        }
+
+        themeSelect.value = document.documentElement.dataset.theme || 'system';
+        applyTheme(themeSelect.value);
+        themeSelect.addEventListener('change', () => applyTheme(themeSelect.value));
+        systemTheme.addEventListener('change', () => {
+            if (themeSelect.value === 'system') applyTheme('system');
+        });
+
+        function localDateString(date = new Date()) {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            return `${y}-${m}-${d}`;
+        }
+
+        function parseDate(value) {
+            const [y, m, d] = value.split('-').map(Number);
+            return new Date(y, m - 1, d, 12);
+        }
+
+        function dateSerial(value) {
+            const [y, m, d] = value.split('-').map(Number);
+            return Math.floor(Date.UTC(y, m - 1, d) / DAY_MS);
+        }
+
+        function daysInMonth(year, monthIndex) {
+            return new Date(year, monthIndex + 1, 0).getDate();
+        }
+
+        function makeDate(year, monthIndex, day) {
+            return localDateString(new Date(year, monthIndex, Math.min(day, daysInMonth(year, monthIndex)), 12));
+        }
+
+        function cycleStart(task, today = localDateString()) {
+            if (task.frequency === 'daily') return today;
+            const anchor = task.anchor || today;
+            if (dateSerial(today) < dateSerial(anchor)) return null;
+            if (task.frequency === 'weekly') {
+                const elapsed = dateSerial(today) - dateSerial(anchor);
+                const start = parseDate(anchor);
+                start.setDate(start.getDate() + Math.floor(elapsed / 7) * 7);
+                return localDateString(start);
+            }
+
+            const first = parseDate(anchor);
+            const now = parseDate(today);
+            if (task.frequency === 'monthly') {
+                let candidate = makeDate(now.getFullYear(), now.getMonth(), first.getDate());
+                if (dateSerial(candidate) > dateSerial(today)) {
+                    candidate = makeDate(now.getFullYear(), now.getMonth() - 1, first.getDate());
+                }
+                return dateSerial(candidate) < dateSerial(anchor) ? null : candidate;
+            }
+
+            let candidate = makeDate(now.getFullYear(), first.getMonth(), first.getDate());
+            if (dateSerial(candidate) > dateSerial(today)) {
+                candidate = makeDate(now.getFullYear() - 1, first.getMonth(), first.getDate());
+            }
+            return dateSerial(candidate) < dateSerial(anchor) ? null : candidate;
+        }
+
+        function nextCycleStart(task, start) {
+            if (!start) return task.anchor;
+            const date = parseDate(start);
+            if (task.frequency === 'daily') date.setDate(date.getDate() + 1);
+            if (task.frequency === 'weekly') date.setDate(date.getDate() + 7);
+            if (task.frequency === 'monthly') {
+                const anchorDay = parseDate(task.anchor).getDate();
+                return makeDate(date.getFullYear(), date.getMonth() + 1, anchorDay);
+            }
+            if (task.frequency === 'yearly') {
+                const anchor = parseDate(task.anchor);
+                return makeDate(date.getFullYear() + 1, anchor.getMonth(), anchor.getDate());
+            }
+            return localDateString(date);
+        }
+
+        function statusFor(task) {
+            const start = cycleStart(task);
+            if (!start) return { state: 'upcoming', start: null, next: task.anchor };
+            return {
+                state: task.completedCycle === start ? 'done' : 'due',
+                start,
+                next: nextCycleStart(task, start)
+            };
+        }
+
+        function loadTasks() {
+            try {
+                const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+                return Array.isArray(value) ? value.filter(validTask) : [];
+            } catch { return []; }
+        }
+
+        function validTask(task) {
+            return task && typeof task.id === 'string' && typeof task.name === 'string' && frequencies.includes(task.frequency);
+        }
+
+        function saveTasks() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+        }
+
+        function uid() {
+            return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        }
+
+        function escapeHtml(value) {
+            const node = document.createElement('div');
+            node.textContent = value;
+            return node.innerHTML;
+        }
+
+        function humanDate(value, options = { month: 'short', day: 'numeric' }) {
+            return parseDate(value).toLocaleDateString(undefined, options);
+        }
+
+        function cycleDescription(task, status) {
+            if (status.state === 'upcoming') return `Starts ${humanDate(task.anchor, { month: 'short', day: 'numeric', year: 'numeric' })}`;
+            if (task.frequency === 'daily') return `Resets tomorrow`;
+            return `Resets ${humanDate(status.next, { month: 'short', day: 'numeric' })}`;
+        }
+
+        function render() {
+            const enriched = tasks.map(task => ({ task, status: statusFor(task) }));
+            const visible = enriched.filter(({ status }) => currentFilter === 'all' || status.state === currentFilter);
+            const due = enriched.filter(item => item.status.state === 'due').length;
+            const done = enriched.filter(item => item.status.state === 'done').length;
+            const nextDates = enriched.map(item => item.status.next).filter(Boolean).sort((a, b) => dateSerial(a) - dateSerial(b));
+
+            // document.getElementById('dueCount').textContent = due;
+            // document.getElementById('doneCount').textContent = done;
+            // document.getElementById('nextReset').textContent = nextDates.length ? relativeDate(nextDates[0]) : '—';
+
+            if (!visible.length) {
+                const message = tasks.length ? `No ${currentFilter} tasks right now.` : 'Add your first repeating task and settle into a rhythm.';
+                list.innerHTML = `<div class="empty"><span class="empty-symbol">✓</span><h3>${tasks.length ? 'All clear' : 'A fresh start'}</h3><p>${message}</p>${tasks.length ? '' : '<button class="button primary" type="button" data-action="add">＋ Add your first task</button>'}</div>`;
+                return;
+            }
+
+            list.innerHTML = visible.map(({ task, status }) => `
+                <article class="task">
+                    <div class="task-copy">
+                        <h3 class="task-title">${escapeHtml(task.name)}</h3>
+                        <div class="meta"><span class="frequency">${task.frequency}</span><span class="dot"></span><span>${cycleDescription(task, status)}</span></div>
+                    </div>
+                    <button class="cycle-button ${status.state}" type="button" data-action="complete" data-id="${task.id}" ${status.state === 'upcoming' ? 'disabled' : ''}>
+                        ${status.state === 'done' ? '✓ Completed' : status.state === 'due' ? 'Mark complete' : 'Not started'}
+                    </button>
+                    <div class="task-actions">
+                        <button class="icon-button" type="button" data-action="edit" data-id="${task.id}" aria-label="Edit ${escapeHtml(task.name)}">···</button>
+                    </div>
+                </article>`).join('');
+        }
+
+        function relativeDate(value) {
+            const diff = dateSerial(value) - dateSerial(localDateString());
+            if (diff === 0) return 'Today';
+            if (diff === 1) return 'Tomorrow';
+            if (diff < 7) return `In ${diff} days`;
+            return humanDate(value);
+        }
+
+        function openTaskDialog(task) {
+            form.reset();
+            document.getElementById('taskId').value = task ? task.id : '';
+            document.getElementById('dialogTitle').textContent = task ? 'Edit task' : 'Add a task';
+            nameInput.value = task ? task.name : '';
+            frequencyInput.value = task ? task.frequency : 'daily';
+            anchorInput.value = task && task.anchor ? task.anchor : localDateString();
+            deleteButton.hidden = !task;
+            resetButton.hidden = !task || statusFor(task).state !== 'done';
+            updateAnchorField();
+            dialog.showModal();
+            requestAnimationFrame(() => nameInput.focus());
+        }
+
+        function updateAnchorField() {
+            const show = frequencyInput.value !== 'daily';
+            anchorField.hidden = !show;
+            anchorInput.required = show;
+            const text = {
+                weekly: 'This weekday becomes the first day of every weekly cycle.',
+                monthly: 'This day becomes the first day of every monthly cycle.',
+                yearly: 'This month and day become the start of every yearly cycle.'
+            };
+            document.getElementById('anchorHint').textContent = text[frequencyInput.value] || '';
+        }
+
+        function notify(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => toast.classList.remove('show'), 2600);
+        }
+
+        function base64UrlEncode(value) {
+            const bytes = new TextEncoder().encode(value);
+            let binary = '';
+            bytes.forEach(byte => binary += String.fromCharCode(byte));
+            return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        }
+
+        function base64UrlDecode(value) {
+            const padded = value.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((value.length + 3) % 4);
+            const binary = atob(padded);
+            return new TextDecoder().decode(Uint8Array.from(binary, char => char.charCodeAt(0)));
+        }
+
+        async function shareSetup() {
+            if (!tasks.length) return notify('Add a task before sharing your setup.');
+            const shared = tasks.map(({ name, frequency, anchor, completedCycle }) => ({
+                name,
+                frequency,
+                ...(anchor ? { anchor } : {}),
+                completedCycle: completedCycle || null
+            }));
+            const url = `${location.href.split('#')[0]}#tasks=${base64UrlEncode(JSON.stringify(shared))}`;
+            try {
+                await navigator.clipboard.writeText(url);
+                notify('Share link copied — current completion status included.');
+            } catch {
+                window.prompt('Copy this share link:', url);
+            }
+        }
+
+        function importSharedTasks() {
+            const match = location.hash.match(/^#tasks=([A-Za-z0-9_-]+)$/);
+            if (!match) return;
+            try {
+                const shared = JSON.parse(base64UrlDecode(match[1]));
+                if (!Array.isArray(shared)) throw new Error('Invalid setup');
+                const imported = shared.slice(0, 100).filter(item => item && typeof item.name === 'string' && item.name.trim() && frequencies.includes(item.frequency)).map(item => ({
+                    id: uid(),
+                    name: item.name.trim().slice(0, 100),
+                    frequency: item.frequency,
+                    anchor: item.frequency === 'daily' ? '' : (/^\d{4}-\d{2}-\d{2}$/.test(item.anchor || '') ? item.anchor : localDateString()),
+                    completedCycle: /^\d{4}-\d{2}-\d{2}$/.test(item.completedCycle || '') ? item.completedCycle : null
+                }));
+                if (!imported.length) throw new Error('Empty setup');
+                tasks = imported;
+                saveTasks();
+                history.replaceState(null, '', location.href.split('#')[0]);
+                notify(`${imported.length} shared task${imported.length === 1 ? '' : 's'} added to this browser.`);
+            } catch {
+                notify('That share link could not be read.');
+            }
+        }
+
+        document.getElementById('addButton').addEventListener('click', () => openTaskDialog());
+        document.getElementById('shareButton').addEventListener('click', shareSetup);
+        document.getElementById('closeDialog').addEventListener('click', () => dialog.close());
+        document.getElementById('cancelButton').addEventListener('click', () => dialog.close());
+        frequencyInput.addEventListener('change', updateAnchorField);
+
+        list.addEventListener('click', event => {
+            const button = event.target.closest('[data-action]');
+            if (!button) return;
+            if (button.dataset.action === 'add') return openTaskDialog();
+            const task = tasks.find(item => item.id === button.dataset.id);
+            if (!task) return;
+            if (button.dataset.action === 'edit') openTaskDialog(task);
+            if (button.dataset.action === 'complete') {
+                const status = statusFor(task);
+                if (status.state === 'upcoming') return;
+                task.completedCycle = status.state === 'done' ? null : status.start;
+                saveTasks();
+                render();
+                notify(status.state === 'done' ? 'Task marked due again.' : 'Task completed for this cycle.');
+            }
+        });
+
+        document.querySelector('.filter-group').addEventListener('click', event => {
+            const button = event.target.closest('[data-filter]');
+            if (!button) return;
+            currentFilter = button.dataset.filter;
+            document.querySelectorAll('.filter').forEach(item => item.classList.toggle('active', item === button));
+            render();
+        });
+
+        form.addEventListener('submit', event => {
+            event.preventDefault();
+            const id = document.getElementById('taskId').value;
+            const existing = tasks.find(item => item.id === id);
+            const scheduleChanged = existing && (existing.frequency !== frequencyInput.value || existing.anchor !== (frequencyInput.value === 'daily' ? '' : anchorInput.value));
+            const next = {
+                id: id || uid(),
+                name: nameInput.value.trim(),
+                frequency: frequencyInput.value,
+                anchor: frequencyInput.value === 'daily' ? '' : anchorInput.value,
+                completedCycle: existing && !scheduleChanged ? existing.completedCycle : null
+            };
+            if (!next.name || (next.frequency !== 'daily' && !next.anchor)) return;
+            if (existing) Object.assign(existing, next);
+            else tasks.push(next);
+            saveTasks();
+            dialog.close();
+            render();
+            notify(existing ? 'Task updated.' : 'Task added.');
+        });
+
+        deleteButton.addEventListener('click', () => {
+            const id = document.getElementById('taskId').value;
+            const task = tasks.find(item => item.id === id);
+            if (!task || !confirm(`Delete “${task.name}”?`)) return;
+            tasks = tasks.filter(item => item.id !== id);
+            saveTasks();
+            dialog.close();
+            render();
+            notify('Task deleted.');
+        });
+
+        resetButton.addEventListener('click', () => {
+            const id = document.getElementById('taskId').value;
+            const task = tasks.find(item => item.id === id);
+            if (!task) return;
+            task.completedCycle = null;
+            saveTasks();
+            dialog.close();
+            render();
+            notify('Task status reset.');
+        });
+
+        dialog.addEventListener('click', event => {
+            if (event.target === dialog) dialog.close();
+        });
+
+        window.addEventListener('storage', event => {
+            if (event.key === STORAGE_KEY) { tasks = loadTasks(); render(); }
+        });
+
+        importSharedTasks();
+        render();
+        setInterval(render, 60000);
+    })();
+</script>
+</body>
+</html>

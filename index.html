@@ -320,7 +320,13 @@
             cursor: pointer;
             font-size: 17px;
         }
-        .icon-button:hover { color: var(--ink); background: var(--surface-hover); }
+        .icon-button:hover:not(:disabled) { color: var(--ink); background: var(--surface-hover); }
+        .icon-button:disabled { opacity: .28; cursor: default; }
+        .drag-handle { width: 31px; cursor: grab; touch-action: none; user-select: none; }
+        .drag-handle:active { cursor: grabbing; }
+        .task.dragging { opacity: .45; }
+        .task.drop-before { box-shadow: inset 0 3px 0 var(--green), 0 7px 22px rgba(38,45,39,.055); }
+        .task.drop-after { box-shadow: inset 0 -3px 0 var(--green), 0 7px 22px rgba(38,45,39,.055); }
 
         .empty {
             padding: 62px 24px;
@@ -441,6 +447,7 @@
             }
             .task-actions { grid-column: auto; grid-row: auto; }
             .icon-button { width: 32px; height: 32px; }
+            .drag-handle { width: 29px; }
             .empty { padding: 38px 18px; }
             .privacy { margin-top: 18px; }
         }
@@ -564,6 +571,9 @@
         let tasks = loadTasks();
         let currentFilter = 'all';
         let toastTimer;
+        let draggedTaskId = null;
+        let touchDropTargetId = null;
+        let touchPlaceAfter = false;
 
         const list = document.getElementById('taskList');
         const dialog = document.getElementById('taskDialog');
@@ -802,7 +812,7 @@
             }
 
             list.innerHTML = visible.map(({ task, status }) => `
-                <article class="task">
+                <article class="task" data-task-id="${task.id}">
                     <div class="task-copy">
                         <h3 class="task-title">${escapeHtml(task.name)}</h3>
                         <div class="meta"><span class="frequency">${task.frequency}${task.scheduleMode === 'completion' ? ' · after completion' : ''}</span><span class="dot"></span><span>${cycleDescription(task, status)}</span></div>
@@ -811,9 +821,58 @@
                         ${status.state === 'done' ? '✓ Completed' : status.state === 'due' ? 'Mark complete' : 'Not started'}
                     </button>
                     <div class="task-actions">
+                        <button class="icon-button drag-handle" type="button" draggable="true" data-id="${task.id}" aria-label="Reorder ${escapeHtml(task.name)}. Drag or use the arrow keys." title="Drag to reorder">⠿</button>
                         <button class="icon-button" type="button" data-action="edit" data-id="${task.id}" aria-label="Edit ${escapeHtml(task.name)}">···</button>
                     </div>
                 </article>`).join('');
+        }
+
+        function moveTaskByOffset(task, direction) {
+            const visibleTasks = tasks.filter(item => currentFilter === 'all' || statusFor(item).state === currentFilter);
+            const visibleIndex = visibleTasks.indexOf(task);
+            const target = visibleTasks[visibleIndex + direction];
+            if (!target) return;
+
+            const taskIndex = tasks.indexOf(task);
+            const targetIndex = tasks.indexOf(target);
+            [tasks[taskIndex], tasks[targetIndex]] = [tasks[targetIndex], tasks[taskIndex]];
+            saveTasks();
+            render();
+            requestAnimationFrame(() => list.querySelector(`.drag-handle[data-id="${task.id}"]`)?.focus());
+            notify(`“${task.name}” moved ${direction < 0 ? 'earlier' : 'later'}.`);
+        }
+
+        function dropTask(draggedId, targetId, placeAfter) {
+            if (!draggedId || !targetId || draggedId === targetId) return;
+            const draggedIndex = tasks.findIndex(task => task.id === draggedId);
+            if (draggedIndex < 0) return;
+            const [dragged] = tasks.splice(draggedIndex, 1);
+            const targetIndex = tasks.findIndex(task => task.id === targetId);
+            if (targetIndex < 0) {
+                tasks.splice(draggedIndex, 0, dragged);
+                return;
+            }
+            tasks.splice(targetIndex + (placeAfter ? 1 : 0), 0, dragged);
+            saveTasks();
+            render();
+            notify(`“${dragged.name}” reordered.`);
+        }
+
+        function clearDragState() {
+            list.querySelectorAll('.dragging, .drop-before, .drop-after').forEach(item => {
+                item.classList.remove('dragging', 'drop-before', 'drop-after');
+            });
+            draggedTaskId = null;
+            touchDropTargetId = null;
+            touchPlaceAfter = false;
+        }
+
+        function markDropTarget(target, clientY) {
+            list.querySelectorAll('.drop-before, .drop-after').forEach(item => item.classList.remove('drop-before', 'drop-after'));
+            if (!target || target.dataset.taskId === draggedTaskId) return false;
+            const placeAfter = clientY >= target.getBoundingClientRect().top + target.offsetHeight / 2;
+            target.classList.add(placeAfter ? 'drop-after' : 'drop-before');
+            return placeAfter;
         }
 
         function relativeDate(value) {
@@ -964,6 +1023,82 @@
                 render();
                 notify(status.state === 'done' ? 'Task marked due again.' : 'Task completed for this cycle.');
             }
+        });
+
+        list.addEventListener('dragstart', event => {
+            const handle = event.target.closest('.drag-handle');
+            if (!handle) return event.preventDefault();
+            draggedTaskId = handle.dataset.id;
+            event.dataTransfer.effectAllowed = 'move';
+            event.dataTransfer.setData('text/plain', draggedTaskId);
+            requestAnimationFrame(() => handle.closest('.task')?.classList.add('dragging'));
+        });
+
+        list.addEventListener('dragover', event => {
+            if (!draggedTaskId) return;
+            const target = event.target.closest('.task');
+            if (!target || target.dataset.taskId === draggedTaskId) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            markDropTarget(target, event.clientY);
+        });
+
+        list.addEventListener('drop', event => {
+            const target = event.target.closest('.task');
+            if (!target || !draggedTaskId) return clearDragState();
+            event.preventDefault();
+            const placeAfter = event.clientY >= target.getBoundingClientRect().top + target.offsetHeight / 2;
+            const draggedId = draggedTaskId;
+            const targetId = target.dataset.taskId;
+            clearDragState();
+            dropTask(draggedId, targetId, placeAfter);
+        });
+
+        list.addEventListener('dragend', clearDragState);
+
+        list.addEventListener('pointerdown', event => {
+            if (event.pointerType === 'mouse') return;
+            const handle = event.target.closest('.drag-handle');
+            if (!handle) return;
+            event.preventDefault();
+            draggedTaskId = handle.dataset.id;
+            handle.setPointerCapture?.(event.pointerId);
+            handle.closest('.task')?.classList.add('dragging');
+        });
+
+        list.addEventListener('pointermove', event => {
+            if (event.pointerType === 'mouse' || !draggedTaskId) return;
+            event.preventDefault();
+            const target = document.elementFromPoint(event.clientX, event.clientY)?.closest('.task');
+            if (!target || target.dataset.taskId === draggedTaskId) {
+                touchDropTargetId = null;
+                list.querySelectorAll('.drop-before, .drop-after').forEach(item => item.classList.remove('drop-before', 'drop-after'));
+                return;
+            }
+            touchDropTargetId = target.dataset.taskId;
+            touchPlaceAfter = markDropTarget(target, event.clientY);
+        });
+
+        list.addEventListener('pointerup', event => {
+            if (event.pointerType === 'mouse' || !draggedTaskId) return;
+            event.preventDefault();
+            const draggedId = draggedTaskId;
+            const targetId = touchDropTargetId;
+            const placeAfter = touchPlaceAfter;
+            clearDragState();
+            if (targetId) dropTask(draggedId, targetId, placeAfter);
+        });
+
+        list.addEventListener('pointercancel', event => {
+            if (event.pointerType !== 'mouse') clearDragState();
+        });
+
+        list.addEventListener('keydown', event => {
+            const handle = event.target.closest('.drag-handle');
+            if (!handle || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return;
+            event.preventDefault();
+            const task = tasks.find(item => item.id === handle.dataset.id);
+            if (task) moveTaskByOffset(task, event.key === 'ArrowUp' ? -1 : 1);
         });
 
         document.querySelector('.filter-group').addEventListener('click', event => {

@@ -123,6 +123,20 @@
             }
         }
 
+        :root[data-theme="dark"] #addButton {
+            color: var(--ink);
+            border-color: var(--line);
+            background: var(--surface-translucent);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root:not([data-theme="light"]) #addButton {
+                color: var(--ink);
+                border-color: var(--line);
+                background: var(--surface-translucent);
+            }
+        }
+
         * { box-sizing: border-box; }
 
         body {

@@ -513,8 +513,16 @@
                     <option value="yearly">Every year</option>
                 </select>
             </div>
+            <div class="field">
+                <label for="scheduleMode">Repeat timing</label>
+                <select id="scheduleMode">
+                    <option value="fixed">On a fixed calendar</option>
+                    <option value="completion">After I complete it</option>
+                </select>
+                <p class="hint" id="scheduleModeHint">The task resets at the start of each calendar cycle.</p>
+            </div>
             <div class="field" id="anchorField" hidden>
-                <label for="anchorDate">Cycle starts on</label>
+                <label for="anchorDate" id="anchorLabel">Cycle starts on</label>
                 <input type="date" id="anchorDate">
                 <p class="hint" id="anchorHint">This date sets the first day of each cycle.</p>
             </div>
@@ -547,6 +555,7 @@
         const form = document.getElementById('taskForm');
         const nameInput = document.getElementById('taskName');
         const frequencyInput = document.getElementById('frequency');
+        const scheduleModeInput = document.getElementById('scheduleMode');
         const anchorInput = document.getElementById('anchorDate');
         const anchorField = document.getElementById('anchorField');
         const deleteButton = document.getElementById('deleteButton');
@@ -642,7 +651,46 @@
             return localDateString(date);
         }
 
+        function nextDueAfterCompletion(task) {
+            if (!validTimestamp(task.completedAt)) return null;
+            const completed = new Date(task.completedAt);
+            const due = new Date(completed);
+            if (task.frequency === 'daily') due.setDate(due.getDate() + 1);
+            if (task.frequency === 'weekly') due.setDate(due.getDate() + 7);
+            if (task.frequency === 'monthly') {
+                const day = due.getDate();
+                due.setDate(1);
+                due.setMonth(due.getMonth() + 1);
+                due.setDate(Math.min(day, daysInMonth(due.getFullYear(), due.getMonth())));
+            }
+            if (task.frequency === 'yearly') {
+                const month = due.getMonth();
+                const day = due.getDate();
+                due.setDate(1);
+                due.setFullYear(due.getFullYear() + 1);
+                due.setMonth(month);
+                due.setDate(Math.min(day, daysInMonth(due.getFullYear(), month)));
+            }
+            return due;
+        }
+
         function statusFor(task) {
+            if (task.scheduleMode === 'completion') {
+                const firstDue = task.frequency === 'daily' ? localDateString() : (task.anchor || localDateString());
+                const nextDue = nextDueAfterCompletion(task);
+                if (nextDue) {
+                    return {
+                        state: Date.now() < nextDue.getTime() ? 'done' : 'due',
+                        start: localDateString(),
+                        next: localDateString(nextDue),
+                        nextAt: nextDue.toISOString()
+                    };
+                }
+                if (dateSerial(localDateString()) < dateSerial(firstDue)) {
+                    return { state: 'upcoming', start: null, next: firstDue };
+                }
+                return { state: 'due', start: localDateString(), next: null };
+            }
             const start = cycleStart(task);
             if (!start) return { state: 'upcoming', start: null, next: task.anchor };
             return {
@@ -695,8 +743,25 @@
             return `Completed ${date}, ${time}`;
         }
 
+        function dueDescription(value) {
+            if (!validTimestamp(value)) return '';
+            const due = new Date(value);
+            const date = localDateString(due) === localDateString()
+                ? 'today'
+                : due.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+            const time = due.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+            return `Due ${date}, ${time}`;
+        }
+
         function cycleDescription(task, status) {
-            if (status.state === 'upcoming') return `Starts ${humanDate(task.anchor, { month: 'short', day: 'numeric', year: 'numeric' })}`;
+            if (status.state === 'upcoming') {
+                const prefix = task.scheduleMode === 'completion' ? 'First due' : 'Starts';
+                return `${prefix} ${humanDate(task.anchor, { month: 'short', day: 'numeric', year: 'numeric' })}`;
+            }
+            if (task.scheduleMode === 'completion') {
+                if (status.state === 'done') return dueDescription(status.nextAt);
+                return status.nextAt ? dueDescription(status.nextAt).replace(/^Due /, 'Due since ') : 'Ready to complete';
+            }
             const reset = task.frequency === 'daily'
                 ? 'Resets tomorrow'
                 : `Resets ${humanDate(status.next, { month: 'short', day: 'numeric' })}`;
@@ -725,7 +790,7 @@
                 <article class="task">
                     <div class="task-copy">
                         <h3 class="task-title">${escapeHtml(task.name)}</h3>
-                        <div class="meta"><span class="frequency">${task.frequency}</span><span class="dot"></span><span>${cycleDescription(task, status)}</span></div>
+                        <div class="meta"><span class="frequency">${task.frequency}${task.scheduleMode === 'completion' ? ' · after completion' : ''}</span><span class="dot"></span><span>${cycleDescription(task, status)}</span></div>
                     </div>
                     <button class="cycle-button ${status.state}" type="button" data-action="complete" data-id="${task.id}" ${status.state === 'upcoming' ? 'disabled' : ''}>
                         ${status.state === 'done' ? '✓ Completed' : status.state === 'due' ? 'Mark complete' : 'Not started'}
@@ -750,6 +815,7 @@
             document.getElementById('dialogTitle').textContent = task ? 'Edit task' : 'Add a task';
             nameInput.value = task ? task.name : '';
             frequencyInput.value = task ? task.frequency : 'daily';
+            scheduleModeInput.value = task && task.scheduleMode === 'completion' ? 'completion' : 'fixed';
             anchorInput.value = task && task.anchor ? task.anchor : localDateString();
             deleteButton.hidden = !task;
             resetButton.hidden = !task || statusFor(task).state !== 'done';
@@ -762,7 +828,16 @@
             const show = frequencyInput.value !== 'daily';
             anchorField.hidden = !show;
             anchorInput.required = show;
-            const text = {
+            const completionBased = scheduleModeInput.value === 'completion';
+            document.getElementById('anchorLabel').textContent = completionBased ? 'First due on' : 'Cycle starts on';
+            document.getElementById('scheduleModeHint').textContent = completionBased
+                ? 'The next interval begins when you press Completed.'
+                : 'The task resets at the start of each calendar cycle.';
+            const text = completionBased ? {
+                weekly: 'The task is first due on this date, then 7 days after each completion.',
+                monthly: 'The task is first due on this date, then one month after each completion.',
+                yearly: 'The task is first due on this date, then one year after each completion.'
+            } : {
                 weekly: 'This weekday becomes the first day of every weekly cycle.',
                 monthly: 'This day becomes the first day of every monthly cycle.',
                 yearly: 'This month and day become the start of every yearly cycle.'
@@ -793,9 +868,10 @@
 
         async function shareSetup() {
             if (!tasks.length) return notify('Add a task before sharing your setup.');
-            const shared = tasks.map(({ name, frequency, anchor, completedCycle, completedAt }) => ({
+            const shared = tasks.map(({ name, frequency, scheduleMode, anchor, completedCycle, completedAt }) => ({
                 name,
                 frequency,
+                scheduleMode: scheduleMode === 'completion' ? 'completion' : 'fixed',
                 ...(anchor ? { anchor } : {}),
                 completedCycle: completedCycle || null,
                 completedAt: completedAt || null
@@ -819,6 +895,7 @@
                     id: uid(),
                     name: item.name.trim().slice(0, 100),
                     frequency: item.frequency,
+                    scheduleMode: item.scheduleMode === 'completion' ? 'completion' : 'fixed',
                     anchor: item.frequency === 'daily' ? '' : (/^\d{4}-\d{2}-\d{2}$/.test(item.anchor || '') ? item.anchor : localDateString()),
                     completedCycle: /^\d{4}-\d{2}-\d{2}$/.test(item.completedCycle || '') ? item.completedCycle : null,
                     completedAt: /^\d{4}-\d{2}-\d{2}$/.test(item.completedCycle || '') && validTimestamp(item.completedAt) ? item.completedAt : null
@@ -853,6 +930,7 @@
         document.getElementById('closeDialog').addEventListener('click', () => dialog.close());
         document.getElementById('cancelButton').addEventListener('click', () => dialog.close());
         frequencyInput.addEventListener('change', updateAnchorField);
+        scheduleModeInput.addEventListener('change', updateAnchorField);
 
         list.addEventListener('click', event => {
             const button = event.target.closest('[data-action]');
@@ -885,11 +963,14 @@
             event.preventDefault();
             const id = document.getElementById('taskId').value;
             const existing = tasks.find(item => item.id === id);
-            const scheduleChanged = existing && (existing.frequency !== frequencyInput.value || existing.anchor !== (frequencyInput.value === 'daily' ? '' : anchorInput.value));
+            const selectedMode = scheduleModeInput.value === 'completion' ? 'completion' : 'fixed';
+            const existingMode = existing && existing.scheduleMode === 'completion' ? 'completion' : 'fixed';
+            const scheduleChanged = existing && (existing.frequency !== frequencyInput.value || existingMode !== selectedMode || existing.anchor !== (frequencyInput.value === 'daily' ? '' : anchorInput.value));
             const next = {
                 id: id || uid(),
                 name: nameInput.value.trim(),
                 frequency: frequencyInput.value,
+                scheduleMode: selectedMode,
                 anchor: frequencyInput.value === 'daily' ? '' : anchorInput.value,
                 completedCycle: existing && !scheduleChanged ? existing.completedCycle : null,
                 completedAt: existing && !scheduleChanged ? existing.completedAt || null : null

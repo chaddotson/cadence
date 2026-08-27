@@ -435,7 +435,15 @@
             }
             .task-title { margin-bottom: 4px; font-size: 15px; }
             .meta { flex-wrap: nowrap; gap: 6px; overflow: hidden; font-size: 11px; white-space: nowrap; }
-            .meta span:last-child { overflow: hidden; text-overflow: ellipsis; }
+            .meta .frequency { order: 3; overflow: hidden; text-overflow: ellipsis; }
+            .meta .dot { order: 2; flex: 0 0 auto; }
+            .cycle-description {
+                order: 1;
+                flex: 0 0 auto;
+                color: var(--ink);
+                font-size: 12px;
+                font-weight: 800;
+            }
             .cycle-button {
                 grid-column: auto;
                 grid-row: auto;
@@ -676,39 +684,39 @@
             return localDateString(date);
         }
 
-        function nextDueAfterCompletion(task) {
-            if (!validTimestamp(task.completedAt)) return null;
-            const completed = new Date(task.completedAt);
-            const due = new Date(completed);
-            if (task.frequency === 'daily') due.setDate(due.getDate() + 1);
-            if (task.frequency === 'weekly') due.setDate(due.getDate() + 7);
+        function completionDateString(value) {
+            if (typeof value !== 'string') return null;
+            if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+                return localDateString(parseDate(value)) === value ? value : null;
+            }
+            const completed = new Date(value);
+            return Number.isNaN(completed.getTime()) ? null : localDateString(completed);
+        }
+
+        function nextResetAfterCompletion(task) {
+            const completedValue = completionDateString(task.completedAt);
+            if (!completedValue) return null;
+            const completed = parseDate(completedValue);
+            if (task.frequency === 'daily') completed.setDate(completed.getDate() + 1);
+            if (task.frequency === 'weekly') completed.setDate(completed.getDate() + 7);
             if (task.frequency === 'monthly') {
-                const day = due.getDate();
-                due.setDate(1);
-                due.setMonth(due.getMonth() + 1);
-                due.setDate(Math.min(day, daysInMonth(due.getFullYear(), due.getMonth())));
+                return makeDate(completed.getFullYear(), completed.getMonth() + 1, completed.getDate());
             }
             if (task.frequency === 'yearly') {
-                const month = due.getMonth();
-                const day = due.getDate();
-                due.setDate(1);
-                due.setFullYear(due.getFullYear() + 1);
-                due.setMonth(month);
-                due.setDate(Math.min(day, daysInMonth(due.getFullYear(), month)));
+                return makeDate(completed.getFullYear() + 1, completed.getMonth(), completed.getDate());
             }
-            return due;
+            return localDateString(completed);
         }
 
         function statusFor(task) {
             if (task.scheduleMode === 'completion') {
                 const firstDue = task.frequency === 'daily' ? localDateString() : (task.anchor || localDateString());
-                const nextDue = nextDueAfterCompletion(task);
-                if (nextDue) {
+                const nextReset = nextResetAfterCompletion(task);
+                if (nextReset) {
                     return {
-                        state: Date.now() < nextDue.getTime() ? 'done' : 'due',
+                        state: dateSerial(localDateString()) < dateSerial(nextReset) ? 'done' : 'due',
                         start: localDateString(),
-                        next: localDateString(nextDue),
-                        nextAt: nextDue.toISOString()
+                        next: nextReset
                     };
                 }
                 if (dateSerial(localDateString()) < dateSerial(firstDue)) {
@@ -736,10 +744,6 @@
             return task && typeof task.id === 'string' && typeof task.name === 'string' && frequencies.includes(task.frequency);
         }
 
-        function validTimestamp(value) {
-            return typeof value === 'string' && !Number.isNaN(new Date(value).getTime());
-        }
-
         function saveTasks() {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
         }
@@ -759,23 +763,24 @@
         }
 
         function completionDescription(value) {
-            if (!validTimestamp(value)) return '';
-            const completed = new Date(value);
-            const date = localDateString(completed) === localDateString()
+            const completed = completionDateString(value);
+            if (!completed) return '';
+            const date = completed === localDateString()
                 ? 'today'
-                : completed.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-            const time = completed.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-            return `Completed ${date}, ${time}`;
+                : humanDate(completed);
+            return `Completed ${date}`;
         }
 
-        function dueDescription(value) {
-            if (!validTimestamp(value)) return '';
-            const due = new Date(value);
-            const date = localDateString(due) === localDateString()
-                ? 'today'
-                : due.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-            const time = due.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
-            return `Due ${date}, ${time}`;
+        function resetDescription(value) {
+            const diff = dateSerial(value) - dateSerial(localDateString());
+            if (diff === 0) return 'Resets today';
+            if (diff === 1) return 'Resets tomorrow';
+            return `Resets ${humanDate(value)}`;
+        }
+
+        function readyDescription(value) {
+            if (value === localDateString()) return 'Ready today';
+            return `Ready since ${humanDate(value)}`;
         }
 
         function cycleDescription(task, status) {
@@ -784,8 +789,8 @@
                 return `${prefix} ${humanDate(task.anchor, { month: 'short', day: 'numeric', year: 'numeric' })}`;
             }
             if (task.scheduleMode === 'completion') {
-                if (status.state === 'done') return dueDescription(status.nextAt);
-                return status.nextAt ? dueDescription(status.nextAt).replace(/^Due /, 'Due since ') : 'Ready to complete';
+                if (status.state === 'done') return resetDescription(status.next);
+                return status.next ? readyDescription(status.next) : 'Complete now';
             }
             const reset = task.frequency === 'daily'
                 ? 'Resets tomorrow'
@@ -815,7 +820,7 @@
                 <article class="task" data-task-id="${task.id}">
                     <div class="task-copy">
                         <h3 class="task-title">${escapeHtml(task.name)}</h3>
-                        <div class="meta"><span class="frequency">${task.frequency}${task.scheduleMode === 'completion' ? ' · after completion' : ''}</span><span class="dot"></span><span>${cycleDescription(task, status)}</span></div>
+                        <div class="meta"><span class="frequency">${task.frequency}${task.scheduleMode === 'completion' ? ' · after completion' : ''}</span><span class="dot"></span><span class="cycle-description">${cycleDescription(task, status)}</span></div>
                     </div>
                     <button class="cycle-button ${status.state}" type="button" data-action="complete" data-id="${task.id}" ${status.state === 'upcoming' ? 'disabled' : ''}>
                         ${status.state === 'done' ? '✓ Completed' : status.state === 'due' ? 'Mark complete' : 'Not started'}
@@ -948,7 +953,7 @@
                 scheduleMode: scheduleMode === 'completion' ? 'completion' : 'fixed',
                 ...(anchor ? { anchor } : {}),
                 completedCycle: completedCycle || null,
-                completedAt: completedAt || null
+                completedAt: completionDateString(completedAt)
             }));
             const url = `${location.href.split('#')[0]}#tasks=${base64UrlEncode(JSON.stringify(shared))}`;
             try {
@@ -972,7 +977,7 @@
                     scheduleMode: item.scheduleMode === 'completion' ? 'completion' : 'fixed',
                     anchor: item.frequency === 'daily' ? '' : (/^\d{4}-\d{2}-\d{2}$/.test(item.anchor || '') ? item.anchor : localDateString()),
                     completedCycle: /^\d{4}-\d{2}-\d{2}$/.test(item.completedCycle || '') ? item.completedCycle : null,
-                    completedAt: /^\d{4}-\d{2}-\d{2}$/.test(item.completedCycle || '') && validTimestamp(item.completedAt) ? item.completedAt : null
+                    completedAt: /^\d{4}-\d{2}-\d{2}$/.test(item.completedCycle || '') ? completionDateString(item.completedAt) : null
                 }));
                 if (!imported.length) throw new Error('Empty setup');
                 tasks = imported;
@@ -989,7 +994,7 @@
         document.getElementById('clearDataButton').addEventListener('click', () => {
             const hasThemePreference = document.documentElement.dataset.theme === 'light' || document.documentElement.dataset.theme === 'dark';
             if (!tasks.length && !hasThemePreference) return notify('There is no saved data to clear.');
-            if (!confirm('Clear all Cadence data from this browser? This removes every task, completion record, timestamp, and saved theme preference. This cannot be undone.')) return;
+            if (!confirm('Clear all Cadence data from this browser? This removes every task, completion record, and saved theme preference. This cannot be undone.')) return;
 
             tasks = [];
             localStorage.removeItem(STORAGE_KEY);
@@ -1018,7 +1023,7 @@
                 if (status.state === 'upcoming') return;
                 const completing = status.state !== 'done';
                 task.completedCycle = completing ? status.start : null;
-                task.completedAt = completing ? new Date().toISOString() : null;
+                task.completedAt = completing ? localDateString() : null;
                 saveTasks();
                 render();
                 notify(status.state === 'done' ? 'Task marked due again.' : 'Task completed for this cycle.');
